@@ -378,10 +378,32 @@ class Satellite:
             self.power_mode = 'normal'
             # don't forget to reconfigure radios, gps, etc...
 
-    def new_file(self,substring,binary=False):
-        '''
-        substring something like '/data/DATA_'
-        directory is created on the SD!
+    def new_file_numeric(
+        self, 
+        substring: str, 
+        extension: str = 'txt', 
+        binary: bool = False
+    ):
+        ''' Create a new file with a unique numeric file name.
+        
+        Generates a file on the sd card (/sd directory) whose name has a 5-digit 
+        integer padded with zeros at the end, with value 1 greater than the largest 
+        already present.
+        
+        E.g.    substring='data/DATA_', extension='txt'
+                /sd/data
+                DATA_00001.txt
+                DATA_00002.txt
+                ...
+        
+        Parameters
+        ----------
+        substring: str
+            substring to precede integer padding. Can contain a directory in its path,
+            for example substring='/data/DATA_'.
+        extension: str
+            file extension to append to end of the file.
+        
         int padded with zeros will be appended to the last found file
         '''
         if self.hardware['SDcard']:
@@ -389,16 +411,10 @@ class Satellite:
             n=0
             _folder=substring[:substring.rfind('/')+1]
             _file=substring[substring.rfind('/')+1:]
-            print('Creating new file in directory: /sd{} with file prefix: {}'.format(_folder,_file))
-            try: chdir('/sd'+_folder)
-            except OSError:
-                print('Directory {} not found. Creating...'.format(_folder))
-                try: mkdir('/sd'+_folder)
-                except Exception as e:
-                    print(e)
-                    return None
+            print(f'Creating new file in directory: /sd{_folder} with file prefix: {_file}')
+            self.new_directory(_folder)
             for i in range(0xFFFF):
-                ff='/sd{}{}{:05}.txt'.format(_folder,_file,(n+i)%0xFFFF)
+                ff=f'/sd{_folder}{_file}{(n+i)%0xFFFF:05}.{extension}'
                 try:
                     if n is not None:
                         stat(ff)
@@ -413,6 +429,74 @@ class Satellite:
                 f.tell()
             chdir('/')
             return ff
+        else:
+            print('SD card not mounted! Aborting...')
+            return None
+    
+    def new_file(self, file_path: str, binary: bool = False):
+        ''' Create a new file with a specified path.
+        
+        Expects file_path to contain 1 child directory, 
+        
+        Parameters
+        ----------
+        file_path: str
+            String containing path to file to create. Expects 1 child directory,
+            e.g. file_path='data/myfile.txt', file_path='parameters/local.bin'
+        binary: bool
+            Write mode in which to open the file
+        '''
+        if self.hardware['SDcard']:
+            # set default extension to '.bin' if file_path does not contain one
+            _ext = '' if ('.' in _file) else '.bin' 
+            _folder=file_path[:file_path.rfind('/')]
+            _file=file_path[file_path.rfind('/')+1:] if ('/' in file_path) else file_path
+
+            # create directory in file_path            
+            self.new_directory(_folder)
+            file = f'/sd/{_folder}/{_file}{_ext}'
+            
+            # create empty file (if doesn't already exist)
+            write_mode = 'ab' if binary else 'a'
+            with open(file, write_mode) as f:
+                f.tell()
+            
+            print(f'New file created at {file}')
+            
+            chdir('/') # set cwd back to root folder
+            return file
+        else:
+            print('SD card not mounted! Aborting...')
+            return None
+
+
+    def new_directory(self, dir_name):
+        '''Create a new directory on the SD card partition.
+        
+        Parameters
+        ----------
+        dir_name: str
+            The name of the directory to be created within the /sd directory
+            provided that the SD card is present.
+        '''
+        # ensure the sd card is mounted
+        if self.hardware['SDcard'] and dir_name != '':
+            # check if directory exists by attempting to cd into it
+            try: chdir('/sd/' + dir_name)
+            except OSError:
+                # if directory does not exist, create it
+                try: mkdir('/sd/' + dir_name)
+                # print error msg if unable to create directory
+                except Exception as e:
+                    print(e)
+                    return False
+                print(f'Created new directory at /sd/{dir_name}')
+                return True
+            print(f'Found existing directory at /sd/{dir_name}')
+            chdir('/')
+            return True
+        else:
+            return False
 
     def burn(self,burn_num,dutycycle=0,freq=1000,duration=1):
         """

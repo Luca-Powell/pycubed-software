@@ -376,7 +376,9 @@ class Satellite:
             n=0
             _folder=substring[:substring.rfind('/')+1]
             _file=substring[substring.rfind('/')+1:]
+            
             print(f'Creating new file in directory: /sd{_folder} with file prefix: {_file}')
+            
             try: chdir('/sd'+_folder)
             except OSError:
                 print(f'Directory {_folder} not found. Creating...')
@@ -400,7 +402,7 @@ class Satellite:
                 f.tell()
             chdir('/')
             return ff
-
+    
     def burn(self,burn_num,dutycycle=0,freq=1000,duration=1):
         """
         Operate burn wire circuits. Wont do anything unless the a nichrome burn wire
