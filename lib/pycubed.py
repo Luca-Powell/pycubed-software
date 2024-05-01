@@ -448,10 +448,11 @@ class Satellite:
         '''
         if self.hardware['SDcard']:
             # set default extension to '.bin' if file_path does not contain one
-            _ext = '' if ('.' in _file) else '.bin' 
+             
             _folder=file_path[:file_path.rfind('/')]
             _file=file_path[file_path.rfind('/')+1:] if ('/' in file_path) else file_path
-
+            _ext = '' if ('.' in _file) else '.bin'
+            
             # create directory in file_path            
             self.new_directory(_folder)
             file = f'/sd/{_folder}/{_file}{_ext}'
