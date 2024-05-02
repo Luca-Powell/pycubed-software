@@ -9,6 +9,8 @@ from pycubed import cubesat
 SERIAL_BUFFERSIZE = 256 # do not change
 RADIO_BUFFERSIZE = 248
 
+ANTENNA_ATTACHED = True
+
 # local and global parameters files
 F_PARAMS_LOCAL = 'params/local.bin'
 F_PARAMS_GLOBAL = 'params/global.bin'
@@ -41,18 +43,20 @@ def tx_params_serial():
     ack_msg = serial1.read(5) # get acknowledge from Raspberry Pi
     print(f"Received ack message: {ack_msg}")
     
-    # successful ack if received b'!!!' in response
-    if ack_msg.decode("utf-8")[0] == b'!':
+    # successful ack if received b'!XXXX' in response
+    if ack_msg[:1] == b'!':
+        print(f"Sending local parameters (len={params_file_length}) via serial")
+        
         # continuously read buffers from params file until EOF and send over serial
-        num_bytes_written = 0
         with open(f_params_local, 'rb') as f: # change to global later for actual FL
-            buffer = f.read(SERIAL_BUFFERSIZE)
-            while buffer:
+            num_bytes_written = 0
+            num_packets = 0
+            while num_bytes_written < params_file_length:
+                buffer = f.read(min(params_file_length-num_bytes_written, SERIAL_BUFFERSIZE))
                 serial1.write(buffer)
                 num_bytes_written += len(buffer)
-                buffer = f.read(SERIAL_BUFFERSIZE)
-                # time.sleep(0.01) # sleep for 10ms to allow buffer to refill    
-            print(f"Wrote {num_bytes_written} bytes to serial port.")
+                num_packets += 1       
+            print(f"Wrote {num_bytes_written} bytes ({num_packets} packets) to serial port.")
     else:
         print("No ack received from Raspberry Pi.")
     
@@ -90,38 +94,42 @@ def rx_params_serial():
         # continuously read buffers from serial port until EOF
         # and write to parameters file
         with open(f_params_local, 'wb') as f:
-            time.sleep(0.01) # wait for buffer to refill
-            buffer = serial1.read(serial1.in_waiting)
-            num_bytes_read = len(buffer)
-            num_less = 0
-            total = 0
+            #time.sleep(0.01) # wait for buffer to initially fill
+            num_bytes_read = 0
+            num_packets = 0
             while num_bytes_read < incoming_params_length:
-                #print(f"Before waiting: {num_bytes_read}, {len(buffer)}, {serial1.in_waiting}")
-                t_start = time.monotonic()
-                time.sleep(0.01) # wait for buffer to refill
-                t_end = time.monotonic()  
-                if serial1.in_waiting < 256:
-                    print(f"in_waiting < 256: {num_bytes_read}, {len(buffer)}, {serial1.in_waiting}, time_elapsed={t_end-t_start}s")
-                    num_less += 1
-                #buf_size = min(incoming_params_length-num_bytes_read, SERIAL_BUFFERSIZE)
-                if (serial1.in_waiting == 0):
-                    break
                 buffer = serial1.read(serial1.in_waiting)
-                num_bytes_read += len(buffer)
                 f.write(buffer)
-                total += 1
+                num_bytes_read += len(buffer)
+                num_packets += 1
                 # time.sleep(0.01) # sleep for 10ms to allow buffer to refill
-            print(f"num_less={num_less}, total={total}")
-            print(f"Received {num_bytes_read} bytes, saved to {f_params_local}.")
+            print(f"Received {num_bytes_read} bytes ({num_packets} pakcets), saved to {f_params_local}.")
     else:
         print("No ack received from Raspberry Pi.")
+
+def tx_params_radio():
+    # if not serial1.connected:
+    #     print("Serial data port not connected. Make sure to enable it in boot.py")
+    #     return
+    # with open()
+    # if stat(self.data_file)[6] >= 256: # bytes
+    #             if SEND_DATA:
+    #                 print(f'\nSend IMU data file: {self.data_file}')
+    #                 with open(self.data_file,'rb') as f:
+    #                     chunk = f.read(64) # each IMU readings is 64 bytes when encoded
+    #                     while chunk:
+    #                         # we could send bigger chunks, radio packet can take 252 bytes
+    #                         self.cubesat.radio1.send(chunk)
+    #                         print(chunk)
+    #                         chunk = f.read(64)
+    #                 print('finished\n')
+    pass
 
 # test program: rx the params and then try send them again 
 rx_params_serial()
 # wait 2 seconds before sending params over
-#print("Waiting 5 seconds before sending...")
-#time.sleep(5)
-#tx_params_serial()
+print("\nWaiting 2 seconds before sending...\n")
+time.sleep(2)
+tx_params_serial()
 
-# print("Contents of /sd folder:")
-# os.listdir('/sd')
+
