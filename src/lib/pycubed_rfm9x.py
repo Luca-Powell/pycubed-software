@@ -283,7 +283,6 @@ class RFM9x:
         # Set mode idle
         self.idle()
 
-
         # Set frequency
         self.frequency_mhz = frequency
         # Set preamble length (default 8 bytes to match radiohead).
@@ -838,6 +837,7 @@ class RFM9x:
            Send a packet with data and wait for an ACK response.
            The packet header is automatically generated.
            If enabled, the packet transmission will be retried on failure
+           kwargs passed to send()
         """
         if self.ack_retries > 1:
             retries_remaining = self.ack_retries
@@ -846,6 +846,8 @@ class RFM9x:
         
         got_ack = False
         self.sequence_number = (self.sequence_number + 1) & 0xFF
+        ack_packet = None
+        ack_msg = None
         
         while not got_ack and retries_remaining:
             self.identifier = self.sequence_number
@@ -865,7 +867,7 @@ class RFM9x:
                         if ack_packet[2] == self.identifier:
                             got_ack = True
                             break
-                        
+                
             # pause before next retry -- random delay
             if not got_ack:
                 print('no uhf ack, sending again...')
@@ -878,12 +880,21 @@ class RFM9x:
             self.flags |= _RH_FLAGS_RETRY
             
         self.flags = 0  # clear flags
+        ack_msg = ack_packet[4:] if ack_packet is not None else b'00000'
         
-        return got_ack
+        return ack_msg, got_ack
 
     # pylint: disable=too-many-branches
     def receive(
-        self, *, keep_listening=True, with_header=False, with_ack=False, timeout=None, debug=False, view=False):
+        self, *, 
+        keep_listening=True, 
+        with_header=False, 
+        with_ack=False,
+        ack_msg=None,
+        timeout=None, 
+        debug=False, 
+        view=False
+    ):
         """Wait to receive a packet from the receiver. If a packet is found the payload bytes
            are returned, otherwise None is returned (which indicates the timeout elapsed with no
            reception).
@@ -963,9 +974,13 @@ class RFM9x:
                         # delay before sending Ack to give receiver a chance to get ready
                         if self.ack_delay is not None:
                             time.sleep(self.ack_delay)
-                        # send ACK packet to sender (data is b'!')
+                        
+                        # send ACK packet to sender (default is b'!')
+                        if ack_msg is None:
+                            ack_msg = b'!'
+                        
                         self.send(
-                            b"!",
+                            ack_msg,
                             keep_listening=keep_listening,
                             destination=packet[1],
                             node=packet[0],
