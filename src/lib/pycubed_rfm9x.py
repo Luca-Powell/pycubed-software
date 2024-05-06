@@ -730,6 +730,12 @@ class RFM9x:
         """crc status"""
         return (self._read_u8(_RH_RF95_REG_12_IRQ_FLAGS) & 0x20) >> 5
 
+    def get_fifo_length(self, with_header=False):
+        if with_header:
+            return self._read_u8(_RH_RF95_REG_13_RX_NB_BYTES)
+        else:
+            return self._read_u8(_RH_RF95_REG_13_RX_NB_BYTES) - 4
+        
     def send(
         self,
         data,
@@ -927,9 +933,12 @@ class RFM9x:
             timed_out = False
             while not timed_out and not self.rx_done():
                 if (time.monotonic() - start) >= timeout:
-                    timed_out = True
+                    print("Receive timed out.")
+                    timed_out = True    
         # Payload ready is set, a packet is in the FIFO.
         packet = None
+        packet_cpy = None
+        
         # save last RSSI reading
         self.last_rssi = self.rssi(raw=True)
         # Enter idle mode to stop receiving other packets.
@@ -946,6 +955,8 @@ class RFM9x:
                 fifo_length = self._read_u8(_RH_RF95_REG_13_RX_NB_BYTES)
                 # Handle if the received packet is too small to include the 4 byte
                 # RadioHead header and at least one byte of data --reject this packet and ignore it.
+                if debug: print('Initial FIFO length: {}'.format(fifo_length))
+                
                 if fifo_length > 0:  # read and clear the FIFO if anything in it
                     current_addr = self._read_u8(_RH_RF95_REG_10_FIFO_RX_CURRENT_ADDR)
                     self._write_u8(_RH_RF95_REG_0D_FIFO_ADDR_PTR, current_addr)
@@ -953,8 +964,17 @@ class RFM9x:
                     packet = self.buffview[:fifo_length]
                     # Read the packet.
                     self._read_into(_RH_RF95_REG_00_FIFO, packet)
+
+                    # copy the received packet from FIFO to memory to return
+                    packet_cpy = bytearray(packet) if with_header \
+                            else bytearray(packet[4:])
+                
                 # Clear interrupt.
                 self._write_u8(_RH_RF95_REG_12_IRQ_FLAGS, 0xFF)
+                
+                if debug: print('Received packet (before sending ack): {}'.format(bytes(packet)))     
+                if debug: print('FIFO length (before sending ack): {}'.format(self._read_u8(_RH_RF95_REG_13_RX_NB_BYTES))) 
+                
                 if fifo_length < 5:
                     print('missing pckt header')
                     packet = None
@@ -975,21 +995,22 @@ class RFM9x:
                         if self.ack_delay is not None:
                             time.sleep(self.ack_delay)
                         
-                        # send ACK packet to sender (default is b'!')
+                        # send ACK packet to sender (if not specified, default is b'!')
                         if ack_msg is None:
                             ack_msg = b'!'
                         
+                        # see if keep_listening must be kept false
                         self.send(
                             ack_msg,
-                            keep_listening=keep_listening,
+                            keep_listening=False,
                             destination=packet[1],
                             node=packet[0],
                             identifier=packet[2],
                             flags=(packet[3] | _RH_FLAGS_ACK),
                         )
-                        if debug: print('Sent Ack to {}'.format(packet[1]))
-                        if debug: print('\t{}'.format(packet))
-
+                        # if debug: print('Sent Ack to {}'.format(packet[1]))
+                        if debug: print('Packet after sending ack: {}'.format(bytes(packet)))
+                        if debug: print('FIFO length (after sending ack): {}'.format(self._read_u8(_RH_RF95_REG_13_RX_NB_BYTES)))  
                         # # reject Retries if we have seen this idetifier from this source before
                         # if (self.seen_ids[packet[1]] == packet[2]) and (
                         #     packet[3] & _RH_FLAGS_RETRY
@@ -998,10 +1019,10 @@ class RFM9x:
                         #     packet = None
                         # else:  # save the packet identifier for this source
                         self.seen_ids[packet[1]] = packet[2]
-                    if (
-                        not with_header and packet is not None
-                    ):  # skip the header if not wanted
-                        packet = packet[4:]
+                    
+                if (not with_header and packet is not None): 
+                    # skip the header if not wanted
+                    packet = packet[4:]
 
         if hasattr(self,'txrx'): # RX
             self.txrx[0].value=False
@@ -1015,10 +1036,17 @@ class RFM9x:
             self.idle()
         # Clear interrupt.
         self._write_u8(_RH_RF95_REG_12_IRQ_FLAGS, 0xFF)
+        
+        # return the originally received packet, if None then return whatever is in the FIFO
+        return packet_cpy
+                
+        # return memoryview of the FIFO buffer
         if view:
             return packet
+        # otherwise return the bytes in the FIFO buffer
         elif packet is not None:
             return bytes(packet)
+        
         return packet
 
     def receive_all(self, only_for_me=True,debug=False):
