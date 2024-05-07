@@ -18,7 +18,7 @@ class task(Task):
     # so perform our task init and use that as a chance to init the data files
     def __init__(self,satellite):
         super().__init__(satellite)
-        self.data_file=self.cubesat.new_file('/data/imu',binary=True)
+        self.data_file=self.cubesat.new_file('params/local.bin')
 
     async def main_task(self):
         # take IMU readings

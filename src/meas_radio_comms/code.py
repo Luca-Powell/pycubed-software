@@ -1,6 +1,6 @@
 """Serial parameter transfer demo."""
 
-import time, usb_cdc, os, struct, tasko, traceback
+import time, usb_cdc, os, struct, tasko, traceback # type: ignore
 
 # instantiate Satellite class (see last line of lib/pycubed.py) and import const
 # variables from config.py
@@ -291,7 +291,7 @@ if (BOARD_NUM == SERVER_BOARD_NUM):
 else:
     update_led(r=0, g=255, b=0, brightness=0.3)
     # schedule wait_for_radio_request function to execute at TASK_FREQ Hz
-    cubesat.tasko.schedule(CLIENT_TASK_FREQ, client_task, TASK_PRIORITY)
+    cubesat.tasko.schedule(CLIENT_TASK_FREQ, radio_wait_respond_cmd, TASK_PRIORITY)
 
     try:
         # loop - runs forever
@@ -306,14 +306,6 @@ else:
         except:
             pass
 
-# program should not have reached this point!
-print("Task loop encountered an exception - program stopped.\n")
-
-# test program: rx the params and then try send them again 
-# rx_params_serial()
-# # wait 2 seconds before sending params over
-# print("\nWaiting 2 seconds before sending...\n")
-# time.sleep(2)
-# tx_params_serial()
-
+    # program should not have reached this point!
+    print("Task loop encountered an exception - program stopped.\n")
 

@@ -13,7 +13,9 @@ serial1 = usb_cdc.data
 # create/locate local and global parameters files on SD card
 f_params_local = cubesat.new_file('params/local.bin')
 f_params_global = cubesat.new_file('params/global.bin')
-    
+
+# start by targeting the next board from the server (FL)
+target_board = SERVER_BOARD_NUM + 1
 
 def update_led(r: int = 0, g: int = 255, b: int = 0, brightness: float = 0.5):
     """Set the PyCubed RGB LED's colour and brightness."""
@@ -175,7 +177,7 @@ def _tx_params_radio(
                  
         print(f"[RADIO] Wrote {num_bytes_transmitted} bytes ({num_packets} packets).")
         print(f"Total time taken: {time_total}\n")
-# SLOW
+
 async def _rx_params_radio(
     params_file: str, 
     incoming_params_length: int, 
@@ -369,16 +371,55 @@ async def radio_send_cmd(cmd: bytes, target_board: int):
             
     return ack_valid
 
+def server_get_next_board_id(target_board: int):
+    """Target the next FL client's board ID, skipping server board ID.
+    
+    Parameters
+    ----------
+    target_board : int
+        The currently targeted client's board ID.
+    
+    Returns
+    -------
+    new_target_board : int
+        The next target board ID. Skips the server Board ID and resets to Board 1 the 
+        max number of clients was reached.
+    """
+    target_board += 1
+    
+    if target_board > NUM_CLIENTS:
+        target_board = target_board % NUM_CLIENTS
+    
+    # repeat once more if the board matches server num (will not match on next call)
+    if target_board == SERVER_BOARD_NUM:
+        target_board = server_get_next_board_id(target_board)
+    
+    return target_board    
+
 async def server_task():
-    """FL server task."""
+    """FL Server task."""
     
-    await 
+    global round_num
     
+    # first client to sample
+    target_board = SERVER_BOARD_NUM + 1
+    round_num = 0
     
-    # last: loop through the Client ID's    
-    target_board = get_next_board_ID()
+    if round_num < NUM_ROUNDS:
+        # first send global params to client
+        await radio_send_cmd(b'R', target_board)
+        
+        # request a client's local parameters
+        await radio_send_cmd(b'S', target_board)
+        
+        # target the next client board
+        target_board = server_get_next_board_id(target_board)
+        round_num += 1
 
 async def client_task():
+    """FL Client task."""
+    
+    # client just waits for requests from server and responds accordingly
     await radio_wait_respond_cmd()
 
 print(f"BOARD_NUM = {BOARD_NUM}")
