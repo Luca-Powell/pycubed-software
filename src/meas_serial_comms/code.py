@@ -123,7 +123,7 @@ def rx_params_serial_fast():
     else:
         print("No ack received from Raspberry Pi.")
 
-def rx_params_serial_fixed_delay():
+def rx_params_serial_fixed_delay(t_delay: int = 0.01):
     """Serially receive the local parameters from Raspberry Pi"""
     
     # TODO: implement timeout for failed transmissions
@@ -162,7 +162,8 @@ def rx_params_serial_fixed_delay():
             num_packets = 0
             t_start = time.monotonic_ns()
             while num_bytes_read < incoming_params_length:
-                time.sleep(0.010) # wait for buffer to fill - fixed delay
+                t_packet = time.monotonic_ns()
+                time.sleep(t_delay) # wait for buffer to fill - fixed delay
                 buffer = serial1.read(min(incoming_params_length-num_bytes_read, SERIAL_BUFFERSIZE))
                 f.write(buffer)
                 num_bytes_read += len(buffer)
@@ -222,7 +223,7 @@ def rx_params_serial_full_buffer():
                 f.write(buffer)
                 num_bytes_read += len(buffer)
                 num_packets += 1
-                t_packet = time.monotonic_ns() - t_packet
+                t_packet = (time.monotonic_ns() - t_packet)
                 t_total = time.monotonic_ns() - t_start
                 print(f"{num_packets}, {len(buffer)}, {num_bytes_read}, {t_packet}, {t_total}")
             print(f"Received {num_bytes_read} bytes ({num_packets} packets), saved to {f_params_local}.")
@@ -234,14 +235,24 @@ print("\nRX FAST:\n")
 time.sleep(1)
 rx_params_serial_fast()
 
-print("\nRX FIXED DELAY:\n")
-time.sleep(1)
-rx_params_serial_fixed_delay()
-
 print("\nRX FULL BUFFER:\n")
 time.sleep(1)
-rx_params_serial_fixed_delay()
+rx_params_serial_full_buffer()
+
+print("\nRX FIXED DELAY (1ms):\n")
+time.sleep(1)
+rx_params_serial_fixed_delay(t_delay=0.001)
+
+print("\nRX FIXED DELAY (5ms):\n")
+time.sleep(1)
+rx_params_serial_fixed_delay(t_delay=0.005)
+
+print("\nRX FIXED DELAY (10ms):\n")
+time.sleep(1)
+rx_params_serial_fixed_delay(t_delay=0.01)
 
 print("\nTX (should be faster than RX in all cases):\n")
+time.sleep(3)
+tx_params_serial()
 
 

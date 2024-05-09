@@ -855,9 +855,12 @@ class RFM9x:
         ack_packet = None
         ack_msg = None
         
+        # look for ack for a number of retries, waiting ack_wait s each retry
         while not got_ack and retries_remaining:
+            # send message / command
             self.identifier = self.sequence_number
             self.send(data, keep_listening=True)
+            
             
             # Don't look for ACK from Broadcast message
             if self.destination == _RH_BROADCAST_ADDRESS:
@@ -876,7 +879,7 @@ class RFM9x:
                 
             # pause before next retry -- random delay
             if not got_ack:
-                print('no uhf ack, sending again...')
+                print(f'no uhf ack received, waiting {self.ack_wait}s and trying again...')
                 # delay before next try
                 time.sleep(self.ack_wait)
             
@@ -1011,14 +1014,15 @@ class RFM9x:
                         # if debug: print('Sent Ack to {}'.format(packet[1]))
                         if debug: print('Packet after sending ack: {}'.format(bytes(packet)))
                         if debug: print('FIFO length (after sending ack): {}'.format(self._read_u8(_RH_RF95_REG_13_RX_NB_BYTES)))  
-                        # # reject Retries if we have seen this idetifier from this source before
-                        # if (self.seen_ids[packet[1]] == packet[2]) and (
-                        #     packet[3] & _RH_FLAGS_RETRY
-                        # ):
-                        #     print('duplicate identifier from this source. rejecting...')
-                        #     packet = None
-                        # else:  # save the packet identifier for this source
-                        self.seen_ids[packet[1]] = packet[2]
+                        
+                        # reject Retries if we have seen this idetifier from this source before
+                        if (self.seen_ids[packet[1]] == packet[2]) and (
+                            packet[3] & _RH_FLAGS_RETRY
+                        ):
+                            print('Duplicate sequence number from this source. rejecting...')
+                            packet_cpy = None
+                        else:  # save the last seen packet identifier for this source
+                            self.seen_ids[packet[1]] = packet[2]
                     
                 if (not with_header and packet is not None): 
                     # skip the header if not wanted
@@ -1039,15 +1043,6 @@ class RFM9x:
         
         # return the originally received packet, if None then return whatever is in the FIFO
         return packet_cpy
-                
-        # return memoryview of the FIFO buffer
-        if view:
-            return packet
-        # otherwise return the bytes in the FIFO buffer
-        elif packet is not None:
-            return bytes(packet)
-        
-        return packet
 
     def receive_all(self, only_for_me=True,debug=False):
         # msg=[]

@@ -14,7 +14,7 @@ serial1 = usb_cdc.data
 f_params_local = cubesat.new_file('params/local.bin')
 f_params_global = cubesat.new_file('params/global.bin')
 
-verbose = True    
+verbose = False   
 max_retries = 5
 
 def update_led(r: int = 0, g: int = 255, b: int = 0, brightness: float = 0.5):
@@ -135,7 +135,7 @@ def radio_send_cmd(cmd: bytes, target_board: int):
         print(f"Ack received from client: {ack_msg}")
         
         if p_bytes[:1] == b'R':
-            _tx_params_radio(f_params_local)
+            _tx_params_radio()
         
     else:
         print("No ack received from client.")
@@ -170,8 +170,6 @@ async def radio_wait_respond_cmd():
     ack_msg = bytearray(b'!')
     ack_msg.extend(struct.pack('I', params_file_length))
     
-    verbose = True
-    
     # receive the packet if rx_ready
     if heard_something:
         # receive the command and send ack message back to the sender
@@ -195,9 +193,10 @@ async def radio_wait_respond_cmd():
                 with open(f_params_local, 'wb') as f:
                     num_bytes_read = 0
                     num_packets = 0
-                    retries = 0   
+                    total_retries = 0
                     t_start = time.monotonic_ns()
                     while num_bytes_read < incoming_params_length:
+                        retries = 0
                         t_packet = time.monotonic_ns()
                         packet_ready = await cubesat.radio1.await_rx(timeout=2)
                         if verbose: print(f"Packet Ready: {packet_ready}")
@@ -217,19 +216,21 @@ async def radio_wait_respond_cmd():
                             t_packet = (time.monotonic_ns() - t_packet) / 10**9
                             print(f"[RADIO] Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_read}, t={t_packet}s")
                             
-                        
                         else:
                             if retries >= max_retries:
                                 print("Exceeded max retries - transmission failed.")
                                 break
                             retries += 1
+                            total_retries += 1
                             print("Failed to receive buffer. Trying again...")                
                     
                     time_total = (time.monotonic_ns() - t_start) / 10**9
                     
                     print(f"[RADIO] Received {num_bytes_read} bytes ({num_packets} packets), saved to {f_params_local}.") 
-                    print(f"Total time taken: {time_total}\n")
-            
+                    print(f"Total time taken: {time_total}")
+                    print(f"Num retries (missed/errored packets): {total_retries}")
+                    print(f"Speed: {num_bytes_read/time_total} bytes/s")
+                    
             # send local parameters to other device
             elif cmd[:1] == b'S':
                 # not necessary for measuring radio comms
@@ -259,29 +260,35 @@ cubesat.radio1.node = get_radiohead_ID(BOARD_NUM)
 # ---------------------------
 # --- Experimental Params ---
 # ---------------------------
-cubesat.radio1.low_datarate_optimize = True # True, False
+cubesat.radio1.low_datarate_optimize = False # True, False
 
 # 5, 6, 7, 8 lower = faster, but more susceptible to interference (crc errors)
-cubesat.radio1.coding_rate = 8 
-
-# see if packets are missed if ack_delay=None, otherwise as low as possible
-cubesat.radio1.ack_delay = 0.05 
-
+cubesat.radio1.coding_rate = 5
 # 6 - 12, lower = faster
-cubesat.radio1.spreading_factor = 7 
+cubesat.radio1.spreading_factor = 7
 
 # valid values: 7800, 10400, 15600, 20800, 31250, 41700, 62500, 125000, 250000 
 # higher = faster
 # default = 125000
-cubesat.radio1.signal_bandwidth = 62500 
+cubesat.radio1.signal_bandwidth = 500000
+
+# see if packets are missed if ack_delay=None, otherwise as low as possible
+cubesat.radio1.ack_delay = 0.05
+
+print(f"RADIO CONFIG:")
+print(f"low_datarate_optimize: {cubesat.radio1.low_datarate_optimize}")
+print(f"coding_rate: {cubesat.radio1.coding_rate}")
+print(f"spreading_factor: {cubesat.radio1.spreading_factor}")
+print(f"signal_bandwidth: {cubesat.radio1.signal_bandwidth}")
+print(f"ack_delay: {cubesat.radio1.ack_delay}")
 
 # ---------------------------
 # ---------------------------
-
 
 # for measuring radio comms, the server board just sends command to receive params
 # with varying radio parameters
 if (BOARD_NUM == SERVER_BOARD_NUM):
+       
     update_led(r=0, g=255, b=255, brightness=0.3)
     print("Radio sending params in 3 seconds...")
     time.sleep(3)

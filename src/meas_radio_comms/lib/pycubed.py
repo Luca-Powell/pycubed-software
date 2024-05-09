@@ -202,6 +202,7 @@ class Satellite:
     @property
     def board_ID(self):
         return self.board_ID
+    
     @board_ID.setter
     def board_ID(self, value):
         if isinstance(value, int) and value >= 0:
