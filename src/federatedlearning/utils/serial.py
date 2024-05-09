@@ -1,4 +1,5 @@
 import os, struct, usb_cdc # type: ignore
+from debugcolor import co
 from config import SERIAL_BUFFERSIZE
 
 class Serial:
@@ -9,28 +10,54 @@ class Serial:
     
     def __init__(self):
         self.serial_port = usb_cdc.data
+        
+        # for formatting debug messages
+        self.name = "Serial"
+        self.color = 'orange'
+
+        # 300seconds=5min read/write timeout 
+        self.serial_port.timeout = 300 
+        self.serial_port.write_timeout = 300 
+        
+    def debug(self,msg,level=1):
+        """
+        Print a debug message formatted with the task name and color
+
+        :param msg: Debug message to print
+        :param level: > 1 will print as a sub-level
+
+        """
+        if level==1:
+            print('{:>30} {}'.format('['+co(msg=self.name,color=self.color)+']',msg))
+            print(f'[{co(msg=self.name,color=self.color):>30}] {msg}')
+        else:
+            print(f'\t   └── {msg}')
     
-    def tx_file(self, params_file: str, binary: bool = True):
-        """Send file over serial port. 
+    def tx_params(self, params_file: str, binary: bool = True):
+        """Send parameters over serial port. 
         
         Expects other device to acknowledge the initial request before sending.
         
         Parameters
         ----------
         params_file : str
-            Path to file that will be transmitted over the serial port.
-            
+            Path to parameters file that will be transmitted over the serial port.
+        
+        Returns
+        -------
+        success : bool
+            Whether the parameters were sent successfully.
+        
         """
         
         # TODO: Implement timeout for failed transmissions
-        # TODO: support binary and non-binary file formats
         
         # first ensure the serial port is open
         if not self.serial_port.connected:
-            print("Serial data port not connected. Make sure to enable it in boot.py")
+            self.debug("Serial data port not connected. Make sure to enable it in boot.py")
             return
         
-        print(f"Attempting to send parameters ({params_file}) over serial")
+        self.debug(f"Attempting to send parameters ({params_file}) over serial")
         
         # 5-byte protocol buffer
         # tell the RPi to receive parameters (i.e., this device sends)
@@ -39,17 +66,18 @@ class Serial:
         params_file_length = os.stat(params_file)[6]
         p_bytes.extend(struct.pack('I', params_file_length))
         
-        print(f"Sending protocol buffer: {p_bytes}")
+        self.debug(f"Sending protocol buffer: {p_bytes}")
         self.serial_port.write(p_bytes)
         ack_msg = self.serial_port.read(5) # get acknowledge from Raspberry Pi
-        print(f"Received ack message: {ack_msg}")
+        self.debug(f"Received ack message: {ack_msg}")
         
         # successful ack if received b'!XXXX' in response
         if ack_msg[:1] == b'!':
-            print(f"Sending file (len={params_file_length}) via serial")
+            self.debug(f"Sending file (len={params_file_length}) via serial")
             
+            write_mode = 'rb' if binary else 'r'
             # continuously read buffers from params file until EOF and send over serial
-            with open(params_file, 'rb') as f: # change to global later for actual FL
+            with open(params_file, write_mode) as f: # change to global later for actual FL
                 num_bytes_written = 0
                 num_packets = 0
                 while num_bytes_written < params_file_length:
@@ -57,13 +85,23 @@ class Serial:
                     self.serial_port.write(buffer)
                     num_bytes_written += len(buffer)
                     num_packets += 1       
-                print(f"Wrote {num_bytes_written} bytes ({num_packets} packets) to serial port.")
+                #self.debug(f"Wrote {num_bytes_written} bytes ({num_packets} packets) to serial port.")
+            
+            # check if other device received successfully
+            success = self.serial_port.read(1)
+            if success[:1] == b"Y":
+                self.debug(f"Successfully wrote {num_bytes_written} bytes ({num_packets} packets) to serial port.")
+                return True
+            else:
+                self.debug("Error: device did not receive successfully.")
         else:
-            print("No ack received from device.")
+            self.debug("No ack received from device.")
+        
+        return False
         
         
-    def rx_file(self, params_file: str, binary: bool = True):
-        """Receive file over serial port.
+    def rx_params(self, params_file: str, get_global_params: bool = True, binary: bool = True):
+        """Receive parameters over serial port.
         
         Expects the other device to acknowledge initial request and specify the length
         of the incoming file before receiving.
@@ -71,42 +109,47 @@ class Serial:
         Parameters
         ----------
         params_file : str
-            Path to file that will be transmitted over the serial port.
-            
+            Path to parameters file that will be transmitted over the serial port.
+        
+        Returns
+        -------
+        success : bool
+            Whether the parameters were received successfully.
+        
         """
         # TODO: implement timeout for failed transmissions
-        # TODO: support binary and non-binary file formats
         
         # first ensure the serial port is open
         if not self.serial_port.connected:
-            print("Serial data port not connected. Make sure to enable it in boot.py")
-            return  
+            self.debug("Serial data port not connected. Make sure to enable it in boot.py")
+            return False
         
-        print(f"Attempting to receive parameters over serial")
+        self.debug(f"Attempting to receive parameters over serial")
         
         # 5-byte protocol buffer
         # tell the RPi to send parameters (i.e., this device receives)
-        p_bytes = bytearray(b'S')
+        p_bytes = bytearray(b'G') if get_global_params else bytearray(b'L')
         
         # remaining 4 bytes = length of the file packed from uint_32
         params_file_length = os.stat(params_file)[6]
         p_bytes.extend(struct.pack('I', params_file_length))
         
-        print(f"Sending protocol buffer: {p_bytes}")
+        self.debug(f"Sending protocol buffer: {p_bytes}")
         self.serial_port.write(p_bytes)
         ack_msg = self.serial_port.read(5) # get acknowledge from Raspberry Pi
-        print(f"Received ack message: {ack_msg}")
+        self.debug(f"Received ack message: {ack_msg}")
             
         # successful ack if received b'!XXXX' where XXXX is the incoming params file length
         if ack_msg[:1] == b'!':
             # get Raspberry Pi's current params file length (should be the same)
             incoming_params_length = struct.unpack('I', ack_msg[1:])[0]
             
-            print(f"Getting local parameters (len={incoming_params_length}) via serial")
+            self.debug(f"Getting local parameters (len={incoming_params_length}) via serial")
             
             # continuously read buffers from serial port until EOF
             # and write to parameters file
-            with open(params_file, 'wb') as f:
+            write_mode = 'wb' if binary else 'w'
+            with open(params_file, write_mode) as f:
                 num_bytes_read = 0
                 num_packets = 0
                 while num_bytes_read < incoming_params_length:
@@ -115,6 +158,17 @@ class Serial:
                     f.write(buffer)
                     num_bytes_read += len(buffer)
                     num_packets += 1
-                print(f"Received {num_bytes_read} bytes ({num_packets} packets), saved to {params_file}.")
+                self.debug(f"Received {num_bytes_read} bytes ({num_packets} packets), saved to {params_file}.")
+
+            if num_bytes_read == incoming_params_length:
+                self.serial_port.write("Y")
+                return True
+            else:
+                self.debug(f"Radio RX error (expected {params_file_length} bytes, received {num_bytes_read}), not attempting Serial TX")
+                self.serial_port.write("N")
         else:
-            print("No ack received from device.")
+            self.debug("No ack received from device.")
+        
+        # transmission failed if reached this point
+        return False
+    

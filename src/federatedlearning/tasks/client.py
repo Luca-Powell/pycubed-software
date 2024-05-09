@@ -9,6 +9,7 @@ from config import (
     RADIO_PACKETSIZE,
     SERIAL_BUFFERSIZE,
     BOARD_NUM,
+    SERVER_BOARD_NUM,
     CLIENT_TASK_FREQ,
     TASK_PRIORITY,
 )
@@ -35,6 +36,9 @@ class ClientTask(Task):
         
         # set this board's radiohead ID based on BOARD_NUM in config.py
         self.cubesat.radio1.node = get_radiohead_ID(BOARD_NUM)
+        
+        # all radio messages should target the server board
+        self.cubesat.radio1.destination = get_radiohead_ID(SERVER_BOARD_NUM)
 
     async def main_task(self):
         """Main FL client task."""
@@ -83,7 +87,7 @@ class ClientTask(Task):
                 
                 # Respond to request - parse the first byte of protocol buffer
                 
-                # receive new global parameters from other device
+                # receive new global parameters from server
                 if cmd[:1] == b'R':
                     # parse incoming params file length from last 4 command bytes 
                     incoming_params_length = struct.unpack('I', cmd[1:])[0]
@@ -92,16 +96,34 @@ class ClientTask(Task):
                         incoming_params_length
                     )
                     
-                    # if entire file was received, send the global parameters to processing unit
+                    # if entire file was received, send the new global parameters to processing unit
                     if bytes_received == params_file_length:
-                        self.serial.tx_file(self.f_params_global)
+                        serial_tx_success = self.serial.tx_params(self.f_params_global)
+                        if not serial_tx_success:
+                            self.debug("Serial TX error.")
                     else:
                         self.debug(f"Radio RX error (expected {params_file_length} bytes, received {bytes_received}), not attempting Serial TX")
                 
                 # send local parameters to other device
                 elif cmd[:1] == b'S':
-                    bytes_sent = self._tx_params_radio(self.f_params_local)
-
+                    # get most recent local params from processing unit
+                    serial_rx_success = self.serial.rx_params(self.f_params_local)
+                    if serial_rx_success:
+                        # tell the server that we are ready and then send our parameters
+                        ack_msg, ack_valid = self.cubesat.radio1.send_with_ack(b'#')
+                        if ack_valid and ack_msg[:1] == b'#':    
+                            num_bytes_sent = self._tx_params_radio(self.f_params_local)
+                        
+                            # if entire file was received, send the global parameters to processing unit
+                            if num_bytes_sent == params_file_length:
+                                self.serial.tx_params(self.f_params_global)
+                            else:
+                                self.debug(f"Radio RX error (file length: {params_file_length} bytes, sent {num_bytes_sent})")
+                        else:
+                            self.debug("Incorrect ack_msg from server - not sending params.")
+                    else:
+                        self.debug("Serial RX error.")
+                
                 # can respond to other commands here
                 elif cmd[1:] == b'L':
                     # e.g. received command b'L', toggle this device's LED
@@ -163,7 +185,7 @@ class ClientTask(Task):
             time_total = (time.monotonic_ns() - t_start) / 10**9
                     
             self.debug(f"Wrote {num_bytes_transmitted} bytes ({num_packets} packets).")
-            self.debug(f"Total time taken: {time_total}\n")
+            self.debug(f"Total time taken: {time_total}\n", level=2)
         
         return num_bytes_transmitted
 
@@ -194,14 +216,15 @@ class ClientTask(Task):
         with open(self.f_params_global, 'wb') as f:
             num_bytes_read = 0
             num_packets = 0
-            retries = 0   
+            total_retries = 0   
             t_start = time.monotonic_ns()
             while num_bytes_read < incoming_params_length:
+                retries = 0
                 t_packet = time.monotonic_ns()
                 packet_ready = await self.cubesat.radio1.await_rx(timeout=2)
                 if verbose: self.debug(f"Packet Ready: {packet_ready}")
                 buffer = self.cubesat.radio1.receive(keep_listening=True, 
-                                                with_ack=True)
+                                                     with_ack=True)
                 if verbose: self.debug(f"Received buffer: {buffer}")
                 
                 # handle if buffer not received (either timed out or crc error)           
@@ -214,20 +237,22 @@ class ClientTask(Task):
                     num_bytes_read += len(buffer)
                     num_packets += 1
                     t_packet = (time.monotonic_ns() - t_packet) / 10**9
-                    self.debug(f"Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_read}, t={t_packet}s")
-                    
+                    self.debug(f"Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_read}, t={t_packet}s")    
                 
                 else:
                     if retries >= max_retries:
                         self.debug("Exceeded max retries - transmission failed.")
                         break
                     retries += 1
+                    total_retries += 1
                     self.debug("Failed to receive buffer. Trying again...")                
             
             time_total = (time.monotonic_ns() - t_start) / 10**9
             
             self.debug(f"Received {num_bytes_read} bytes ({num_packets} packets), saved to {self.f_params_global}.") 
             self.debug(f"Total time taken: {time_total}\n", level=2)
+            self.debug(f"Num retries (missed/errored packets): {total_retries}", level=2)
+            self.debug(f"Speed: {num_bytes_read/time_total} bytes/s", level=2)
             
         return num_bytes_read
         
