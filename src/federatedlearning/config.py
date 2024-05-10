@@ -5,8 +5,8 @@ BOARD_NUM = 1
 
 # FL config
 SERVER_BOARD_NUM = 1
-NUM_ROUNDS = 5
-NUM_CLIENTS = 5
+NUM_ROUNDS = 2
+NUM_CLIENTS = 2
 
 # Serial
 SERIAL_BUFFERSIZE = 256 # (max 256)
@@ -16,6 +16,6 @@ RADIO_PACKETSIZE = 248 # (max is 252 to allow space for prepended 4-byte headers
 ANTENNA_ATTACHED = True
 
 # Async Tasks (tasko library) 
-SERVER_TASK_FREQ = 0.001 # 0.001 Hz - once every 1000s, 16min40s
+SERVER_TASK_FREQ = 0.01 # 0.001 Hz - once every 100s, 16min40s
 CLIENT_TASK_FREQ = 0.1 # 0.1 Hz -  once every 10s
 TASK_PRIORITY = 1

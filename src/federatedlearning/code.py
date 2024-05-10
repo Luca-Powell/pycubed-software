@@ -9,6 +9,9 @@ from utils.serial import Serial
 from utils.radio import get_radiohead_ID
 from config import * # const variables declared in config.py
 
+from tasks.server import ServerTask
+from tasks.client import ClientTask
+
 print("\n{lines}\n{:^40}\n{lines}\n".format("FLyCubes Demo",lines="-"*40))
 print("Initializing PyCubed Hardware...\n")
 
@@ -43,45 +46,33 @@ print(f"BOARD_NUM: {BOARD_NUM}")
 print(f"Mode: {"Server" if is_server else "Client"}")
 print(f"Number of rounds: {NUM_ROUNDS}")
 
+
 if is_server:
-    
     # schedule the server task
-    pass
+    task_obj = ServerTask(cubesat)
+    cubesat.tasko.schedule(SERVER_TASK_FREQ, task_obj.main_task, TASK_PRIORITY)
 
-    try:
-        # loop - runs forever
-        cubesat.tasko.run()
-    except Exception as e:
-        # otherwise, format and log exception
-        formatted_exception = traceback.format_exception(e, e, e.__traceback__)
-        print(formatted_exception)
-        try:
-            cubesat.c_state_err += 1 # increment our NVM error counter
-            cubesat.log(f"{formatted_exception},{cubesat.c_state_err},{cubesat.c_boot}") # try to log everything
-        except:
-            pass
-
-# otherwise run client loop - waiting for radio messages
 else:
     # schedule the client task
-    pass
+    task_obj = ClientTask(cubesat)
+    cubesat.tasko.schedule(CLIENT_TASK_FREQ, task_obj.main_task, TASK_PRIORITY)
     
+try:
+    # program loop - runs forever unless encounters exception
+    cubesat.tasko.run()
+except Exception as e:
+    # otherwise, format and log exception
+    formatted_exception = traceback.format_exception(e, e, e.__traceback__)
+    print(formatted_exception)
     try:
-        # loop - runs forever
-        cubesat.tasko.run()
-    except Exception as e:
-        # otherwise, format and log exception
-        formatted_exception = traceback.format_exception(e, e, e.__traceback__)
-        print(formatted_exception)
-        try:
-            cubesat.c_state_err += 1 # increment our NVM error counter
-            cubesat.log(f"{formatted_exception},{cubesat.c_state_err},{cubesat.c_boot}") # try to log everything
-        except:
-            pass
+        cubesat.c_state_err += 1 # increment our NVM error counter
+        cubesat.log(f"{formatted_exception},{cubesat.c_state_err},{cubesat.c_boot}") # try to log everything
+    except:
+        pass
 
 # program should not have reached this point!
 print("Task loop encountered an exception - program stopped.\n")
 print('Engaging fail safe: hard reset in 5 seconds...')
 time.sleep(5)
-cubesat.micro.on_next_reset(cubesat.micro.RunMode.NORMAL)
-cubesat.micro.reset() # reboot
+#cubesat.micro.on_next_reset(cubesat.micro.RunMode.NORMAL)
+#cubesat.micro.reset() # reboot

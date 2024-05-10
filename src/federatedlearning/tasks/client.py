@@ -81,8 +81,7 @@ class ClientTask(Task):
                                               ack_msg=ack_msg)
             
             if cmd is not None:
-                self.debug(f"Received command: '{cmd}',
-                      RSSI={self.cubesat.radio1.last_rssi-137}")
+                self.debug(f"Received command: '{cmd}', RSSI={self.cubesat.radio1.last_rssi-137}")
                 self.cubesat.c_gs_resp += 1 # increment radio msg counter    
                 
                 # Respond to request - parse the first byte of protocol buffer
@@ -124,6 +123,17 @@ class ClientTask(Task):
                     else:
                         self.debug("Serial RX error.")
                 
+                # get number of training samples in processing unit's partition 
+                elif cmd[1:] == b'N':
+                    num_samples = self.serial.get_num_samples()
+                    msg = struct.pack("I", num_samples)
+                    ack_msg, ack_valid = self.cubesat.radio1.send_with_ack(msg)
+
+                    if ack_valid and ack_msg[:1] == b'!':
+                        self.debug("Successfully sent num_samples to server")
+                    else:
+                        self.debug("Send num_samples to server failed")
+                    
                 # can respond to other commands here
                 elif cmd[1:] == b'L':
                     # e.g. received command b'L', toggle this device's LED

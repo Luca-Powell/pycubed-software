@@ -35,8 +35,8 @@ class Task:
 
         """
         if level==1:
-            print('{:>30} {}'.format('['+co(msg=self.name,color=self.color)+']',msg))
-            print(f'[{co(msg=self.name,color=self.color):>30}] {msg}')
+            print('{:>10} {}'.format('['+co(msg=self.name,color=self.color)+']',msg))
+            # print(f'[{co(msg=self.name,color=self.color):>30}] {msg}')
         else:
             print(f'\t   └── {msg}')
 

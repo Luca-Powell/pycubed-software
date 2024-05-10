@@ -1,30 +1,29 @@
 """
 CircuitPython driver for PyCubed satellite board.
 PyCubed Hardware Version: mainboard-v05
-CircuitPython Version: 8.1.2 alpha
+CircuitPython Version: 7.0.0 alpha
 Library Repo: https://github.com/pycubed/library_pycubed.py
 
-Author: Max Holliday
-Modified by: Luca Powell
+* Author(s): Max Holliday
 """
 # Common CircuitPython Libs
-import board, microcontroller # type: ignore
-import busio, time, sys # type: ignore
-from storage import mount,umount,VfsFat # type: ignore
-from analogio import AnalogIn # type: ignore
-import digitalio, sdcardio, pwmio, tasko # type: ignore
+import board, microcontroller
+import busio, time, sys
+from storage import mount,umount,VfsFat
+from analogio import AnalogIn
+import digitalio, sdcardio, pwmio, tasko
 
 # Hardware Specific Libs
 import pycubed_rfm9x # Radio
 import bmx160 # IMU
-import neopixel # RGB LED # type: ignore
+import neopixel # RGB LED
 import bq25883 # USB Charger
 import adm1176 # Power Monitor
 
 # Common CircuitPython Libs
 from os import listdir,stat,statvfs,mkdir,chdir
 from bitflags import bitFlag,multiBitFlag,multiByte
-from micropython import const # type: ignore
+from micropython import const
 
 
 # NVM register numbers
@@ -203,6 +202,7 @@ class Satellite:
     @property
     def board_ID(self):
         return self.board_ID
+    
     @board_ID.setter
     def board_ID(self, value):
         if isinstance(value, int) and value >= 0:
@@ -434,7 +434,7 @@ class Satellite:
             print('SD card not mounted! Aborting...')
             return None
     
-    def new_file(self, file_path: str, binary: bool = False, debug: bool = False):
+    def new_file(self, file_path: str, binary: bool = False):
         ''' Create a new file with a specified path.
         
         Expects file_path to contain 1 child directory, 
@@ -463,7 +463,7 @@ class Satellite:
             with open(file, write_mode) as f:
                 f.tell()
             
-            if debug: print(f'New file created at {file}')
+            print(f'New file created at {file}')
             
             chdir('/') # set cwd back to root folder
             return file
@@ -472,7 +472,7 @@ class Satellite:
             return None
 
 
-    def new_directory(self, dir_name, debug=False):
+    def new_directory(self, dir_name):
         '''Create a new directory on the SD card partition.
         
         Parameters
@@ -492,9 +492,9 @@ class Satellite:
                 except Exception as e:
                     print(e)
                     return False
-                if debug: print(f'Created new directory at /sd/{dir_name}')
+                print(f'Created new directory at /sd/{dir_name}')
                 return True
-            if debug: print(f'Found existing directory at /sd/{dir_name}')
+            #print(f'Found existing directory at /sd/{dir_name}')
             chdir('/')
             return True
         else:

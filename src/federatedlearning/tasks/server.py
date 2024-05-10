@@ -28,7 +28,7 @@ class ServerTask(Task):
         self.serial = Serial()
         
         # init global parameters file
-        self.f_params_global = self.cubesat.new_file('params/global.bin', binary=True, debug=True)
+        self.f_params_global = self.cubesat.new_file('params/global.bin', binary=True)
         
         # init client parameters files
         self.client_params_files = []
@@ -43,11 +43,13 @@ class ServerTask(Task):
         self.target_board = SERVER_BOARD_NUM + 1
         self.round_num = 0
         
-        # set LED to cyan
+        # set LED to green
         self.cubesat.RGB = (0, 255, 0)
         self.cubesat.brightness = 0.3
         
         self.cubesat.radio1.destination = get_radiohead_ID(self.target_board)
+        
+        self.num_client_samples = [0]*NUM_CLIENTS
     
     async def main_task(self):
         """Main FL Server task."""
@@ -56,34 +58,56 @@ class ServerTask(Task):
         
         if self.round_num < NUM_ROUNDS:
             # get the global parameters from the processing unit
-            self.serial.rx_params(self.f_params_global)
+            success = self.serial.rx_params(self.f_params_global, get_global_params=True)
+            
+            if not success:
+                self.debug("No serial connection, aborting round.")
+                return
+            
+            # change this for different strategies!!
+            ##########################################
+            
+            # ASYNC FL
             
             # normal loop - radio send params, then receive
             if self.target_board != BOARD_NUM:
                 # send global params to current target client
                 success = await self.radio_send_cmd(b'R')
 
-                # if the clients have 
+                # get client local model only if it is not the first round ()
                 if self.round_num > 0:
                     # request a client to send its local parameters
+                    await self.radio_send_cmd(b'N') # get the client's num samples
                     success = await self.radio_send_cmd(b'S')
 
-                if success: 
-                    # send newly received client params to processing unit
-                    success = self.serial.tx_params(self.get_target_client_params_file())
+                    if success: 
+                        # send newly received client params to processing unit
+                        self.serial.tx_params(
+                            self.get_target_client_params_file(), 
+                            self.target_board, 
+                            self.num_client_samples[self.target_board-1],
+                            is_global_model=False
+                            )
+                    else:
+                        self.debug("Unable to receive parameters from client, aborting round.")
+                        return
             
+            # otherwise we need to sample the local client running on this device's processing unit
             else:
                 # custom command b'O' tells processing unit to aggregate 
                 # its own local model with the current global model
-                self.serial.serial_port.write(bytearray(b'O'))
-            
-            
+                self.serial.instruct_server_use_local_model()
             
             # target the next client board
-            self.target_next_client(self.target_board)
+            self.target_next_client()
             self.cubesat.radio1.destination = get_radiohead_ID(self.target_board)
             
+            # GOSSIP LEARNING
             
+            # Get global params from neighbor, send to PU, aggregate with local
+            
+            ###########################################
+
             self.round_num += 1
             
         else:
@@ -170,6 +194,14 @@ class ServerTask(Task):
                     return True
                 else:
                     self.debug(f"Radio TX error (file length: {params_file_length} bytes, sent {num_bytes_received})")
+                    
+            elif p_bytes[:1] == b'N':
+                packet_ready = await self.cubesat.radio1.await_rx(timeout=2)
+                if packet_ready:
+                    msg = self.cubesat.radio1.receive(keep_listening=True, 
+                                                      with_ack=True)
+                    num_samples = struct.unpack("I", msg)
+                    self.num_client_samples[self.target_board-1] = num_samples
                     
         else:
             print("No ack received from client.")
