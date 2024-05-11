@@ -54,28 +54,33 @@ class ServerTask(Task):
     async def main_task(self):
         """Main FL Server task."""
         
-        self.debug(f"Starting Round {self.round_num}\n")
+        self.debug(f"\nStarting Round {self.round_num} (Server: Board {SERVER_BOARD_NUM}, Target Client: Board {self.target_board})")
         
         if self.round_num < NUM_ROUNDS:
             # get the global parameters from the processing unit
+            # should be automatically aggregated every time we send local parameters
             success = self.serial.rx_params(self.f_params_global, get_global_params=True)
             
             if not success:
-                self.debug("No serial connection, aborting round.")
+                self.debug("Serial error, aborting round.\n")
                 return
             
             # change this for different strategies!!
             ##########################################
             
-            # ASYNC FL
+            # ASYNC FL - same as QuAFL
             
             # normal loop - radio send params, then receive
             if self.target_board != BOARD_NUM:
                 # send global params to current target client
                 success = await self.radio_send_cmd(b'R')
 
+                if not success:
+                    self.debug(f"Unable to send global parameters to Board {self.target_board}, aborting round.\n")
+                    return
+                
                 # get client local model only if it is not the first round ()
-                if self.round_num > 0:
+                if self.round_num > NUM_CLIENTS:
                     # request a client to send its local parameters
                     await self.radio_send_cmd(b'N') # get the client's num samples
                     success = await self.radio_send_cmd(b'S')
@@ -89,9 +94,8 @@ class ServerTask(Task):
                             is_global_model=False
                             )
                     else:
-                        self.debug("Unable to receive parameters from client, aborting round.")
+                        self.debug(f"Unable to receive local parameters from Board {self.target_board}, aborting round.\n")
                         return
-            
             # otherwise we need to sample the local client running on this device's processing unit
             else:
                 # custom command b'O' tells processing unit to aggregate 
@@ -107,8 +111,6 @@ class ServerTask(Task):
             # Get global params from neighbor, send to PU, aggregate with local
             
             ###########################################
-
-            self.round_num += 1
             
         else:
             # TODO: stopping criteria once finished the total rounds
@@ -204,7 +206,7 @@ class ServerTask(Task):
                     self.num_client_samples[self.target_board-1] = num_samples
                     
         else:
-            print("No ack received from client.")
+            self.debug(f"No radio ack received from Board {self.target_board}.")
         
         # transmission was unsuccessful if reached this point
         return False
