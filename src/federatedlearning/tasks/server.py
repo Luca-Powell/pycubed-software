@@ -19,7 +19,7 @@ class ServerTask(Task):
     priority = TASK_PRIORITY 
     frequency = SERVER_TASK_FREQ
     name = 'Server'
-    color = 'green'
+    color = 'teal'
     
     def __init__(self, satellite, server_also_client: bool = True):
         super().__init__(satellite) # init base_task object
@@ -44,7 +44,7 @@ class ServerTask(Task):
         self.round_num = 0
         
         # set LED to green
-        self.cubesat.RGB = (0, 255, 0)
+        self.cubesat.RGB = (0, 255, 255)
         self.cubesat.brightness = 0.3
         
         self.cubesat.radio1.destination = get_radiohead_ID(self.target_board)
@@ -54,7 +54,8 @@ class ServerTask(Task):
     async def main_task(self):
         """Main FL Server task."""
         
-        self.debug(f"\nStarting Round {self.round_num} (Server: Board {SERVER_BOARD_NUM}, Target Client: Board {self.target_board})")
+        print("\n")
+        self.debug(f"Starting Round {self.round_num} (Server: Board {SERVER_BOARD_NUM}, Target Client: Board {self.target_board})")
         
         if self.round_num < NUM_ROUNDS:
             # get the global parameters from the processing unit
@@ -166,9 +167,9 @@ class ServerTask(Task):
                 # in their ack message
                 incoming_params_length = struct.unpack('I', ack_msg[1:])[0]            
                 
-                # wait 3mins for client to get ready to send params (they will need
+                # wait 2mins for client to get ready to send params (they will need
                 # to first get them from their processing unit)
-                timeout = 180
+                timeout = 120
                 client_ready = await self.cubesat.radio1.await_rx(timeout=timeout)
                 if client_ready:
                     client_ready_msg = self.cubesat.radio1.receive(keep_listening=True, 
@@ -180,7 +181,7 @@ class ServerTask(Task):
                     return False
                 # if client sends ready message, receive its local parameters
                 if client_ready_msg == b'#':
-                    num_bytes_received = await self._rx_params_radio(self.f_params_global, incoming_params_length)
+                    num_bytes_received = await self._rx_params_radio(incoming_params_length)
                 
                 # then send the received parameters to processing unit
                 if num_bytes_received == incoming_params_length:
@@ -195,7 +196,7 @@ class ServerTask(Task):
                 if num_bytes_sent == params_file_length:
                     return True
                 else:
-                    self.debug(f"Radio TX error (file length: {params_file_length} bytes, sent {num_bytes_received})")
+                    self.debug(f"Radio TX error (file length: {params_file_length} bytes, sent {num_bytes_sent})")
                     
             elif p_bytes[:1] == b'N':
                 packet_ready = await self.cubesat.radio1.await_rx(timeout=2)
@@ -223,7 +224,7 @@ class ServerTask(Task):
         """
         
         # get the length of the local parameters file
-        params_file_length = os.stat(self.f_params_local)[6]
+        params_file_length = os.stat(self.f_params_global)[6]
         
         # send params over radio
         self.debug(f"Sending local parameters (len={params_file_length})")
@@ -288,10 +289,10 @@ class ServerTask(Task):
         with open(client_params_file, 'wb') as cpf:
             num_bytes_read = 0
             num_packets = 0
+            retries = 0
             total_retries = 0   
             t_start = time.monotonic_ns()
             while num_bytes_read < incoming_params_length:
-                retries = 0
                 t_packet = time.monotonic_ns()
                 packet_ready = await self.cubesat.radio1.await_rx(timeout=2)
                 if verbose: self.debug(f"Packet Ready: {packet_ready}")
@@ -310,7 +311,10 @@ class ServerTask(Task):
                     num_packets += 1
                     t_packet = (time.monotonic_ns() - t_packet) / 10**9
                     self.debug(f"Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_read}, t={t_packet}s")
-    
+
+                    # reset the number of retries for future packets
+                    retries = 0
+                    
                 else:
                     if retries >= max_retries:
                         self.debug("Exceeded max retries - transmission failed.")
@@ -321,7 +325,7 @@ class ServerTask(Task):
             
             time_total = (time.monotonic_ns() - t_start) / 10**9
             
-            self.debug(f"Received {num_bytes_read} bytes ({num_packets} packets), saved to {self.f_params_global}.") 
+            self.debug(f"Received {num_bytes_read} bytes ({num_packets} packets), saved to {client_params_file}.") 
             self.debug(f"Total time taken: {time_total}\n", level=2)
             self.debug(f"Num retries (missed/errored packets): {total_retries}")
             self.debug(f"Speed: {num_bytes_read/time_total} bytes/s")

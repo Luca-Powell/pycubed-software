@@ -33,7 +33,7 @@ class Serial:
         else:
             print(f'\t   └── {msg}')
     
-    def tx_params(self, params_file: str, cid: int, num_samples: int = 0, is_global_model: bool = False, binary: bool = True):
+    def tx_params(self, params_file: str, cid: int = 0, num_samples: int = 0, is_global_model: bool = False, binary: bool = True):
         """Send parameters over serial port. 
         
         Expects other device to acknowledge the initial request before sending.

@@ -71,8 +71,10 @@ except Exception as e:
         pass
 
 # program should not have reached this point!
-print("Task loop encountered an exception - program stopped.\n")
-print('Engaging fail safe: hard reset in 5 seconds...')
-time.sleep(5)
+print("Task loop encountered an exception.\n")
+print('To stop program, press CTRL+C')
+
+while True:
+    time.sleep(5)
 #cubesat.micro.on_next_reset(cubesat.micro.RunMode.NORMAL)
 #cubesat.micro.reset() # reboot
