@@ -33,10 +33,11 @@ cubesat.radio1.coding_rate = 5 # 5, 6, 7, 8 lower = faster, but more susceptible
 cubesat.radio1.spreading_factor = 7 # 6 - 12, lower = faster
 
 # valid values: 7800, 10400, 15600, 20800, 31250, 41700, 62500, 125000, 250000, 500000
-cubesat.radio1.signal_bandwidth = 500000 # higher = faster
+cubesat.radio1.signal_bandwidth = 500000 # higher = faster, but less reliable
 
 # see if packets are missed if ack_delay=None, otherwise as low as possible
 cubesat.radio1.ack_delay = 0.05
+cubesat.radio1.ack_retries = 10
 
 # --------------------
 

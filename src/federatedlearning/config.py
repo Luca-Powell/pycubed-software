@@ -1,12 +1,13 @@
 """Config for code.py"""
 
 # board ID - set to unique value for each board (1, 2, ..., N)
-BOARD_NUM = 1
+BOARD_NUM = 2
 
 # FL config
 SERVER_BOARD_NUM = 1
-NUM_ROUNDS = 2
+NUM_ROUNDS = 8
 NUM_CLIENTS = 2
+MINIMUM_EPOCHS = 1
 
 # Serial
 SERIAL_BUFFERSIZE = 256 # (max 256)

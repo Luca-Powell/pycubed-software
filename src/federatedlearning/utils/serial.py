@@ -145,7 +145,7 @@ class Serial:
             # get Raspberry Pi's current params file length (should be the same)
             incoming_params_length = struct.unpack('I', ack_msg[1:])[0]
             
-            self.debug(f"Getting local parameters (len={incoming_params_length}) via serial")
+            self.debug(f"Getting parameters (global={get_global_params}, len={incoming_params_length}) via serial")
             
             # continuously read buffers from serial port until EOF
             # and write to parameters file
@@ -186,13 +186,34 @@ class Serial:
         # tell the RPi to send parameters (i.e., this device receives)
         p_bytes = self.generate_protocol_buffer(b'N')
         
-        self.debug(f"Sending protocol buffer: {p_bytes}")
+        #self.debug(f"Sending protocol buffer: {p_bytes}")
         self.serial_port.write(p_bytes)
         ack_msg = self.serial_port.read(5) # get acknowledge from Raspberry Pi
         num_samples = struct.unpack('I', ack_msg[1:])[0]
-        self.debug(f"Received ack message: {ack_msg} - num_samples={num_samples}")
+        self.debug(f"Received response: num_samples={num_samples}")
         
         return num_samples
+    
+    def get_local_epochs(self):
+        """Retrive the processing unit's partition length (number of samples)."""
+           # first ensure the serial port is open
+        if not self.serial_port.connected:
+            self.debug("Serial data port not connected. Make sure to enable it in boot.py")
+            return False
+        
+        self.debug(f"Getting local epochs from processing unit")
+        
+        # 5-byte protocol buffer
+        # tell the RPi to send parameters (i.e., this device receives)
+        p_bytes = self.generate_protocol_buffer(b'E')
+        
+        #self.debug(f"Sending protocol buffer: {p_bytes}")
+        self.serial_port.write(p_bytes)
+        ack_msg = self.serial_port.read(5) # get acknowledge from Raspberry Pi
+        num_epochs = struct.unpack('I', ack_msg[1:])[0]
+        self.debug(f"Received response: num_local_epochs={num_epochs}")
+        
+        return num_epochs
     
     def instruct_server_use_local_model(self):
         """Tell the server processing unit to aggregate using its own local model."""
@@ -201,13 +222,13 @@ class Serial:
             self.debug("Serial data port not connected. Make sure to enable it in boot.py")
             return False
         
-        self.debug(f"Getting num samples from processing unit")
+        self.debug(f"Telling server to update global using its local client's model")
         
         # 5-byte protocol buffer
         # tell the RPi to send parameters (i.e., this device receives)
         p_bytes = self.generate_protocol_buffer(b'O')
         
-        self.debug(f"Sending protocol buffer: {p_bytes}")
+        #self.debug(f"Sending protocol buffer: {p_bytes}")
         self.serial_port.write(p_bytes)
         ack_msg = self.serial_port.read(5) # get acknowledge from Raspberry Pi
         

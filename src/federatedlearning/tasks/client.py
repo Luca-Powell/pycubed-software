@@ -31,8 +31,9 @@ class ClientTask(Task):
         self.serial = Serial()
         
         # set LED to green
-        self.cubesat.RGB = (0, 255, 0)
-        self.cubesat.brightness = 0.3
+        self.default_led_colour = (0, 255, 0) # rgb
+        self.default_led_brightness = 0.2
+        self.set_default_led()
         
         # set this board's radiohead ID based on BOARD_NUM in config.py
         self.cubesat.radio1.node = get_radiohead_ID(BOARD_NUM)
@@ -119,7 +120,7 @@ class ClientTask(Task):
                         self.debug("Serial RX error.")
                 
                 # get number of partition training samples from processing unit  
-                elif cmd[1:] == b'N':
+                elif cmd[:1] == b'N':
                     num_samples = self.serial.get_num_samples()
                     msg = struct.pack("I", num_samples)
                     ack_msg, ack_valid = self.cubesat.radio1.send_with_ack(msg)
@@ -128,9 +129,19 @@ class ClientTask(Task):
                         self.debug("Successfully sent num_samples to server")
                     else:
                         self.debug("Send num_samples to server failed")
+
+                elif cmd[:1] == b'E':
+                    num_local_epochs = self.serial.get_local_epochs()
+                    msg = struct.pack("I", num_local_epochs)
+                    ack_msg, ack_valid = self.cubesat.radio1.send_with_ack(msg)
+
+                    if ack_valid and ack_msg[:1] == b'!':
+                        self.debug("Successfully sent num_local_epochs to server")
+                    else:
+                        self.debug("Send num_local_epochs to server failed")
                     
                 # can respond to other commands here
-                elif cmd[1:] == b'L':
+                elif cmd[:1] == b'L':
                     # e.g. received command b'L', toggle this device's LED
                     pass
                 
@@ -169,6 +180,7 @@ class ClientTask(Task):
             num_packets = 0
             t_start = time.monotonic_ns()
             while num_bytes_transmitted < params_file_length:
+                self.toggle_led(0, 0, 255)
                 t_packet = time.monotonic_ns()
                 # read next packet from parameters file
                 buffer = f.read(min(params_file_length-num_bytes_transmitted, RADIO_PACKETSIZE))
@@ -184,7 +196,7 @@ class ClientTask(Task):
                 num_packets += 1
                 
                 t_packet = (time.monotonic_ns() - t_packet) / 10**9
-                self.debug(f"Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_transmitted}, t={t_packet}s")
+                #self.debug(f"Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_transmitted}, t={t_packet}s")
                 
             
             time_total = (time.monotonic_ns() - t_start) / 10**9
@@ -192,6 +204,7 @@ class ClientTask(Task):
             self.debug(f"Wrote {num_bytes_transmitted} bytes ({num_packets} packets).")
             self.debug(f"Total time taken: {time_total}s\n", level=2)
         
+        self.set_default_led()
         return num_bytes_transmitted
 
     async def _rx_params_radio(self,
@@ -225,6 +238,7 @@ class ClientTask(Task):
             total_retries = 0   
             t_start = time.monotonic_ns()
             while num_bytes_read < incoming_params_length:
+                self.toggle_led(0, 0, 255)
                 t_packet = time.monotonic_ns()
                 packet_ready = await self.cubesat.radio1.await_rx(timeout=2)
                 if verbose: self.debug(f"Packet Ready: {packet_ready}")
@@ -242,7 +256,7 @@ class ClientTask(Task):
                     num_bytes_read += len(buffer)
                     num_packets += 1
                     t_packet = (time.monotonic_ns() - t_packet) / 10**9
-                    self.debug(f"Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_read}, t={t_packet}s")
+                    # self.debug(f"Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_read}, t={t_packet}s")
                     
                     # reset the number of retries for future packets
                     retries = 0
@@ -261,6 +275,20 @@ class ClientTask(Task):
             self.debug(f"Total time taken: {time_total}s", level=2)
             self.debug(f"Num retries (missed/errored packets): {total_retries}", level=2)
             self.debug(f"Speed: {num_bytes_read/time_total} bytes/s\n", level=2)
-            
+        
+        self.set_default_led()
         return num_bytes_read
+    
+    def set_default_led(self):
+        self.cubesat.RGB = self.default_led_colour
+        self.cubesat.brightness = self.default_led_brightness
+        
+    def toggle_led(self, r: int = 0, g: int = 0, b: int = 0):
+        """Toggle the LED to/from default to custom colour respectively."""
+        
+        if self.cubesat.RGB == self.default_led_colour:        
+            # set LED to green
+            self.cubesat.RGB = (r, g, b)
+        else:
+            self.set_default_led()
         

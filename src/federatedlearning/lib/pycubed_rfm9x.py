@@ -12,9 +12,9 @@ Library Repo: https://github.com/pycubed/library_pycubed.py
 """
 import time
 from random import random
-import digitalio
-from micropython import const
-import adafruit_bus_device.spi_device as spidev
+import digitalio # type: ignore
+from micropython import const # type: ignore
+import adafruit_bus_device.spi_device as spidev # type: ignore
 
 # pylint: disable=bad-whitespace
 # Internal constants:
@@ -937,7 +937,7 @@ class RFM9x:
             while not timed_out and not self.rx_done():
                 if (time.monotonic() - start) >= timeout:
                     print("Receive timed out.")
-                    timed_out = True    
+                    timed_out = True
         # Payload ready is set, a packet is in the FIFO.
         packet = None
         packet_cpy = None

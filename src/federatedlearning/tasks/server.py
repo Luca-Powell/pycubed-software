@@ -9,6 +9,7 @@ from config import (
     BOARD_NUM,
     NUM_CLIENTS,
     NUM_ROUNDS,
+    MINIMUM_EPOCHS,
     SERVER_BOARD_NUM,
     TASK_PRIORITY,
     SERVER_TASK_FREQ,
@@ -43,21 +44,28 @@ class ServerTask(Task):
         self.target_board = SERVER_BOARD_NUM + 1
         self.round_num = 0
         
-        # set LED to green
-        self.cubesat.RGB = (0, 255, 255)
-        self.cubesat.brightness = 0.3
+        # set LED to cyan
+        self.default_led_colour = (0, 255, 255) # rgb
+        self.default_led_brightness = 0.1
+        self.set_default_led()
         
         self.cubesat.radio1.destination = get_radiohead_ID(self.target_board)
         
+        self.clients_initialised = [False]*NUM_CLIENTS
+        
+        # for storing number of partition training samples for each client
         self.num_client_samples = [0]*NUM_CLIENTS
-    
+        
+        # for storing last received num local epochs for each client
+        self.client_epochs = [0]*NUM_CLIENTS 
+        
     async def main_task(self):
         """Main FL Server task."""
         
-        print("\n")
-        self.debug(f"Starting Round {self.round_num} (Server: Board {SERVER_BOARD_NUM}, Target Client: Board {self.target_board})")
-        
         if self.round_num < NUM_ROUNDS:
+            print("\n")
+            self.debug(f"Starting Round {self.round_num} (Server: Board {SERVER_BOARD_NUM}, Target Client: Board {self.target_board})")
+            
             # get the global parameters from the processing unit
             # should be automatically aggregated every time we send local parameters
             success = self.serial.rx_params(self.f_params_global, get_global_params=True)
@@ -73,39 +81,84 @@ class ServerTask(Task):
             
             # normal loop - radio send params, then receive
             if self.target_board != BOARD_NUM:
-                # send global params to current target client
-                success = await self.radio_send_cmd(b'R')
 
-                if not success:
-                    self.debug(f"Unable to send global parameters to Board {self.target_board}, aborting round.\n")
-                    return
-                
-                # get client local model only if it is not the first round ()
-                if self.round_num > NUM_CLIENTS:
-                    # request a client to send its local parameters
-                    await self.radio_send_cmd(b'N') # get the client's num samples
-                    success = await self.radio_send_cmd(b'S')
-
-                    if success: 
-                        # send newly received client params to processing unit
-                        self.serial.tx_params(
-                            self.get_target_client_params_file(), 
-                            self.target_board, 
-                            self.num_client_samples[self.target_board-1],
-                            is_global_model=False
-                            )
-                    else:
-                        self.debug(f"Unable to receive local parameters from Board {self.target_board}, aborting round.\n")
+                # if the target board doesn't yet have global parameters, just send
+                # them global parameters and return
+                if not self.clients_initialised[self.target_board-1]:
+                    
+                    # send global params to current target client
+                    success = await self.radio_send_cmd(b'R')
+                    
+                    if success:
+                        self.clients_initialised[self.target_board-1] = True
+                        self.debug(f"Successfully sent initial global model to Board {self.target_board}.")
+                        self.target_next_client()
                         return
+                    else:
+                        self.debug(f"Unable to send initial global parameters to Board {self.target_board}, targeting next client.\n")
+                        self.target_next_client()
+                        return
+                
+                # otherwise, initiate local/global parameters
+                else:
+                    # get the current local epochs from target client
+                    await self.radio_send_cmd(b'E')
+                    
+                    # only send/receive params if the client has done the minimum number of epoch
+                    if self.client_epochs[self.target_board-1] >= MINIMUM_EPOCHS:
+                        self.debug(f"Sending global params to Board {self.target_board}.")
+                        time.sleep(1)
+                        # send global params to current target client
+                        success = await self.radio_send_cmd(b'R')
+                        if success:
+                            self.debug(f"Sent new global parameters to Board {self.target_board}.")
+                        else:
+                            self.debug(f"Unable to send global parameters to Board {self.target_board}, targeting next client.\n")
+                            self.target_next_client()
+                            return
+                        
+                        # request a client to send its local parameters
+                        success = await self.radio_send_cmd(b'S')
+                        if success:                             
+                            # get the client's num samples
+                            time.sleep(0.1)
+                            await self.radio_send_cmd(b'N')
+                            
+                            # send newly received client params to processing unit
+                            self.serial.tx_params(
+                                self.get_target_client_params_file(), 
+                                self.target_board, 
+                                self.num_client_samples[self.target_board-1],
+                                is_global_model=False
+                                )
+                            self.round_num += 1
+                            
+                        else:
+                            self.debug(f"Unable to receive local parameters from Board {self.target_board}, targeting next client.\n")
+                            self.target_next_client()
+                            return
+                    else:
+                        n_epochs = self.client_epochs[self.target_board-1]
+                        self.debug(f"Board {self.target_board} not enough epochs (current={n_epochs}, minimum={MINIMUM_EPOCHS}), targeting next client.")
+            
             # otherwise we need to sample the local client running on this device's processing unit
             else:
-                # custom command b'O' tells processing unit to aggregate 
+                # instruct the processing unit to aggregate 
                 # its own local model with the current global model
-                self.serial.instruct_server_use_local_model()
+                # either if it is first round (initial params) or if it has completed
+                # local epochs in current round
+                self.client_epochs[self.target_board-1] = self.serial.get_local_epochs()
+                if self.round_num == 0 or self.client_epochs[self.target_board-1] >= MINIMUM_EPOCHS:
+                    self.serial.instruct_server_use_local_model()
+                    self.round_num += 1
+                else:
+                    n_epochs = self.client_epochs[self.target_board-1]
+                    self.debug(f"Board {self.target_board} not enough epochs (current={n_epochs}, minimum={MINIMUM_EPOCHS}), targeting next client.")
             
             # target the next client board
             self.target_next_client()
-            self.cubesat.radio1.destination = get_radiohead_ID(self.target_board)
+            
+            ###########################################
             
             # GOSSIP LEARNING
             
@@ -115,7 +168,7 @@ class ServerTask(Task):
             
         else:
             # TODO: stopping criteria once finished the total rounds
-            print("Finished all FL rounds.")
+            self.debug("Finished all FL rounds.")
     
     async def radio_send_cmd(self, cmd: bytes):
         """Send command to target board and handle corresponding tasks.
@@ -138,7 +191,7 @@ class ServerTask(Task):
         
         # only transmit if antenna is attached (otherwise can damage radio)
         if not ANTENNA_ATTACHED:
-            print("No antenna attached. Please attach antenna and set ",
+            self.debug("No antenna attached. Please attach antenna and set ",
                 "ANTENNA_ATTACHED to true in config.py")
             return False
         
@@ -152,7 +205,7 @@ class ServerTask(Task):
             params_file_length = os.stat(self.f_params_global)[6]
             p_bytes.extend(struct.pack('I', params_file_length))
             
-            print(f"Sending command to Board {self.target_board}: {p_bytes}")
+            self.debug(f"Sending command to Board {self.target_board}: {p_bytes}")
             
         # send protocol bytes to target board
         ack_msg, ack_valid = self.cubesat.radio1.send_with_ack(p_bytes)
@@ -160,7 +213,7 @@ class ServerTask(Task):
         # if the target client responds, handle the corresponding command tasks
         if ack_valid and ack_msg[:1] == b'!':
             # handle the corresponding command tasks
-            print(f"Ack received from client: {ack_msg}")
+            self.debug(f"Ack received from client: {ack_msg}")
             
             if p_bytes[:1] == b'S':
                 # client is supposed to have included their local params file length
@@ -203,8 +256,16 @@ class ServerTask(Task):
                 if packet_ready:
                     msg = self.cubesat.radio1.receive(keep_listening=True, 
                                                       with_ack=True)
-                    num_samples = struct.unpack("I", msg)
+                    num_samples = struct.unpack("I", msg)[0]
                     self.num_client_samples[self.target_board-1] = num_samples
+            
+            elif p_bytes[:1] == b'E':
+                packet_ready = await self.cubesat.radio1.await_rx(timeout=2)
+                if packet_ready:
+                    msg = self.cubesat.radio1.receive(keep_listening=True, 
+                                                      with_ack=True)
+                    num_epochs = struct.unpack("I", msg)[0]
+                    self.client_epochs[self.target_board-1] = num_epochs
                     
         else:
             self.debug(f"No radio ack received from Board {self.target_board}.")
@@ -235,6 +296,7 @@ class ServerTask(Task):
             num_packets = 0
             t_start = time.monotonic_ns()
             while num_bytes_transmitted < params_file_length:
+                self.toggle_led(0, 0, 255)
                 t_packet = time.monotonic_ns()
                 # read next packet from global params file
                 buffer = gpf.read(min(params_file_length-num_bytes_transmitted, RADIO_PACKETSIZE)) 
@@ -250,13 +312,14 @@ class ServerTask(Task):
                 num_packets += 1
                 
                 t_packet = (time.monotonic_ns() - t_packet) / 10**9
-                self.debug(f"Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_transmitted}, t={t_packet}s")
+                #self.debug(f"Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_transmitted}, t={t_packet}s")
                 
             time_total = (time.monotonic_ns() - t_start) / 10**9
                     
             self.debug(f"Wrote {num_bytes_transmitted} bytes ({num_packets} packets).")
             self.debug(f"Total time taken: {time_total}\n", level=2)
 
+        self.set_default_led()
         return num_bytes_transmitted
     
     async def _rx_params_radio(self,
@@ -293,6 +356,7 @@ class ServerTask(Task):
             total_retries = 0   
             t_start = time.monotonic_ns()
             while num_bytes_read < incoming_params_length:
+                self.toggle_led(0, 0, 255)
                 t_packet = time.monotonic_ns()
                 packet_ready = await self.cubesat.radio1.await_rx(timeout=2)
                 if verbose: self.debug(f"Packet Ready: {packet_ready}")
@@ -310,7 +374,7 @@ class ServerTask(Task):
                     num_bytes_read += len(buffer)
                     num_packets += 1
                     t_packet = (time.monotonic_ns() - t_packet) / 10**9
-                    self.debug(f"Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_read}, t={t_packet}s")
+                    #self.debug(f"Packet={num_packets}, Wrote={len(buffer)}, Total={num_bytes_read}, t={t_packet}s")
 
                     # reset the number of retries for future packets
                     retries = 0
@@ -329,7 +393,8 @@ class ServerTask(Task):
             self.debug(f"Total time taken: {time_total}\n", level=2)
             self.debug(f"Num retries (missed/errored packets): {total_retries}")
             self.debug(f"Speed: {num_bytes_read/time_total} bytes/s")
-                    
+        
+        self.set_default_led()      
         return num_bytes_read
 
     def target_next_client(self):
@@ -347,6 +412,7 @@ class ServerTask(Task):
             max number of clients was reached.
         """
         self.target_board += 1
+        self.cubesat.radio1.destination = get_radiohead_ID(self.target_board)
         
         if self.target_board > NUM_CLIENTS:
             self.target_board = self.target_board % NUM_CLIENTS
@@ -360,3 +426,16 @@ class ServerTask(Task):
     def get_target_client_params_file(self):
         """Get the parameters file for the currently targeted client."""
         return self.client_params_files[self.target_board-1]
+    
+    def set_default_led(self):
+        self.cubesat.RGB = self.default_led_colour
+        self.cubesat.brightness = self.default_led_brightness
+        
+    def toggle_led(self, r: int = 0, g: int = 0, b: int = 0):
+        """Toggle the LED to/from default to custom colour respectively."""
+        
+        if self.cubesat.RGB == self.default_led_colour:        
+            # set LED to green
+            self.cubesat.RGB = (r, g, b)
+        else:
+            self.set_default_led()
