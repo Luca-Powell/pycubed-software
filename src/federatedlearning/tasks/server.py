@@ -49,6 +49,7 @@ class ServerTask(Task):
         self.default_led_brightness = 0.1
         self.set_default_led()
         
+        self.cubesat.radio1.node = get_radiohead_ID(BOARD_NUM)
         self.cubesat.radio1.destination = get_radiohead_ID(self.target_board)
         
         self.clients_initialised = [False]*NUM_CLIENTS
@@ -85,9 +86,10 @@ class ServerTask(Task):
                 # if the target board doesn't yet have global parameters, just send
                 # them global parameters and return
                 if not self.clients_initialised[self.target_board-1]:
-                    
                     # send global params to current target client
                     success = await self.radio_send_cmd(b'R')
+                    
+                    self.debug(f"Board {self.target_board} not initialised, not requesting local parameters.")
                     
                     if success:
                         self.clients_initialised[self.target_board-1] = True
@@ -131,7 +133,6 @@ class ServerTask(Task):
                                 self.num_client_samples[self.target_board-1],
                                 is_global_model=False
                                 )
-                            self.round_num += 1
                             
                         else:
                             self.debug(f"Unable to receive local parameters from Board {self.target_board}, targeting next client.\n")
@@ -140,6 +141,8 @@ class ServerTask(Task):
                     else:
                         n_epochs = self.client_epochs[self.target_board-1]
                         self.debug(f"Board {self.target_board} not enough epochs (current={n_epochs}, minimum={MINIMUM_EPOCHS}), targeting next client.")
+                        self.target_next_client()
+                        return
             
             # otherwise we need to sample the local client running on this device's processing unit
             else:
@@ -150,13 +153,15 @@ class ServerTask(Task):
                 self.client_epochs[self.target_board-1] = self.serial.get_local_epochs()
                 if self.round_num == 0 or self.client_epochs[self.target_board-1] >= MINIMUM_EPOCHS:
                     self.serial.instruct_server_use_local_model()
-                    self.round_num += 1
                 else:
                     n_epochs = self.client_epochs[self.target_board-1]
                     self.debug(f"Board {self.target_board} not enough epochs (current={n_epochs}, minimum={MINIMUM_EPOCHS}), targeting next client.")
+                    self.target_next_client()
+                    return
             
             # target the next client board
             self.target_next_client()
+            self.round_num += 1
             
             ###########################################
             
@@ -412,10 +417,12 @@ class ServerTask(Task):
             max number of clients was reached.
         """
         self.target_board += 1
-        self.cubesat.radio1.destination = get_radiohead_ID(self.target_board)
         
+        # loop back to first client if reached the last client
         if self.target_board > NUM_CLIENTS:
             self.target_board = self.target_board % NUM_CLIENTS
+        
+        self.cubesat.radio1.destination = get_radiohead_ID(self.target_board)
         
         # repeat once more if the board matches server num (will not match on next call)
         # and this server is not running their own client training

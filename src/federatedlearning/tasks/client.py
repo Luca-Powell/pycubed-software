@@ -53,8 +53,8 @@ class ClientTask(Task):
                 "ANTENNA_ATTACHED to true in config.py")
             return
         
-        # listen for 1 second less than the task frequency
-        listen_time = 1/self.frequency - 1 
+        # listen for 10 seconds
+        listen_time = 10
         
         # set the radio to listen mode
         self.cubesat.radio1.listen()

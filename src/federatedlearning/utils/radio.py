@@ -5,8 +5,8 @@ def get_radiohead_ID(
     """Return the radiohead ID of a given board"""
     
     # hard-coded board addresses
-    board_ids = [0xA0, 0xA3, 0xA6, 0xA9, 0xAC] 
-    return board_ids[board_num]
+    board_ids = [0xA0, 0xB3, 0xC6, 0xD9, 0xEC]
+    return board_ids[board_num-1]
 
 
 def update_led(
