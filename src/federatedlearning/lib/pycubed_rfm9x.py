@@ -988,12 +988,17 @@ class RFM9x:
                         and packet[0] != self.node
                     ):
                         packet = None
+                        packet_cpy = None
+                        
                     # send ACK unless this was an ACK or a broadcast
                     elif (
                         with_ack
                         and ((packet[3] & _RH_FLAGS_ACK) == 0)
+                        and (packet[0] == self.node) # whether the packet is directed towards this device
                         and (packet[0] != _RH_BROADCAST_ADDRESS)
                     ):
+                        if debug: print(f"sending ack after receving packet with header={packet[0]},{packet[1]}, {packet[2]}, {packet[3]}")
+                        
                         # delay before sending Ack to give receiver a chance to get ready
                         if self.ack_delay is not None:
                             time.sleep(self.ack_delay)
