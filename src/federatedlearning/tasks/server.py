@@ -13,6 +13,7 @@ from config import (
     SERVER_BOARD_NUM,
     TASK_PRIORITY,
     SERVER_TASK_FREQ,
+    CLIENT_TASK_FREQ,
     RADIO_PACKETSIZE,
 )
 
@@ -86,6 +87,11 @@ class ServerTask(Task):
                 # if the target board doesn't yet have global parameters, just send
                 # them global parameters and return
                 if not self.clients_initialised[self.target_board-1]:
+                    
+                    # get local partition size from target client
+                    await self.radio_send_cmd(b'N')
+                    time.sleep(1/CLIENT_TASK_FREQ)
+                    
                     # send global params to current target client
                     success = await self.radio_send_cmd(b'R')
                     
@@ -101,10 +107,11 @@ class ServerTask(Task):
                         self.target_next_client()
                         return
                 
-                # otherwise, initiate local/global parameters
+                # otherwise, initiate local+global parameter transaction
                 else:
-                    # get the current local epochs from target client
+                    # get the current local epochs and num samples from target client
                     await self.radio_send_cmd(b'E')
+                    time.sleep(1/CLIENT_TASK_FREQ)
                     
                     # only send/receive params if the client has done the minimum number of epoch
                     if self.client_epochs[self.target_board-1] >= MINIMUM_EPOCHS:
@@ -122,10 +129,6 @@ class ServerTask(Task):
                         # request a client to send its local parameters
                         success = await self.radio_send_cmd(b'S')
                         if success:                             
-                            # get the client's num samples
-                            time.sleep(0.1)
-                            await self.radio_send_cmd(b'N')
-                            
                             # send newly received client params to processing unit
                             self.serial.tx_params(
                                 self.get_target_client_params_file(), 
@@ -262,6 +265,7 @@ class ServerTask(Task):
                     msg = self.cubesat.radio1.receive(keep_listening=True, 
                                                       with_ack=True)
                     num_samples = struct.unpack("I", msg)[0]
+                    self.debug(f"Got num samples from Board {self.target_board}: {num_samples}")
                     self.num_client_samples[self.target_board-1] = num_samples
             
             elif p_bytes[:1] == b'E':
@@ -270,6 +274,7 @@ class ServerTask(Task):
                     msg = self.cubesat.radio1.receive(keep_listening=True, 
                                                       with_ack=True)
                     num_epochs = struct.unpack("I", msg)[0]
+                    self.debug(f"Got num local epochs from Board {self.target_board}: {num_epochs}")
                     self.client_epochs[self.target_board-1] = num_epochs
                     
         else:
