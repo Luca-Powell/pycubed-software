@@ -8,7 +8,7 @@ Library Repo: https://github.com/pycubed/library_pycubed.py
 """
 # Common CircuitPython Libs
 import board, microcontroller
-import busio, time, sys
+import busio, time, sys, os
 from storage import mount,umount,VfsFat
 from analogio import AnalogIn
 import digitalio, sdcardio, pwmio, tasko
@@ -457,6 +457,12 @@ class Satellite:
             # create directory in file_path            
             self.new_directory(_folder)
             file = f'/sd/{_folder}/{_file}{_ext}'
+            
+            try:
+                os.remove(file)
+                print(f'Removed existing file at {file}')
+            except OSError:
+                pass
             
             # create empty file (if doesn't already exist)
             write_mode = 'ab' if binary else 'a'

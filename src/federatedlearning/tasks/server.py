@@ -241,7 +241,8 @@ class ServerTask(Task):
                     self.debug(f"Waited {timeout}s for client to send local params, received no response. Aborting round...")
                     return False
                 # if client sends ready message, receive its local parameters
-                if client_ready_msg == b'#':
+                if client_ready_msg[:1] == b'#':
+                    incoming_params_length = struct.unpack('I', client_ready_msg[1:])[0]
                     num_bytes_received = await self._rx_params_radio(incoming_params_length)
                 
                 # then send the received parameters to processing unit

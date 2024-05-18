@@ -227,8 +227,7 @@ class Serial:
         # 5-byte protocol buffer
         # tell the RPi to send parameters (i.e., this device receives)
         p_bytes = self.generate_protocol_buffer(b'O')
-        
-        #self.debug(f"Sending protocol buffer: {p_bytes}")
+        self.debug(f"Sending protocol buffer: {p_bytes}")
         self.serial_port.write(p_bytes)
         ack_msg = self.serial_port.read(5) # get acknowledge from Raspberry Pi
         

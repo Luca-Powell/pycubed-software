@@ -4,10 +4,10 @@
 BOARD_NUM = 5
 
 # FL config
-SERVER_BOARD_NUM = 1
-NUM_ROUNDS = 40
+SERVER_BOARD_NUM = 3
+NUM_ROUNDS = 30
 NUM_CLIENTS = 5
-MINIMUM_EPOCHS = 6 # minimum number of client local epochs per round
+MINIMUM_EPOCHS = 5 # minimum number of client local epochs per round
 
 # Serial
 SERIAL_BUFFERSIZE = 256 # (max 256)

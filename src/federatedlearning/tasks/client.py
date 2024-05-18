@@ -105,10 +105,13 @@ class ClientTask(Task):
                 elif cmd[:1] == b'S':
                     # get most recent local params from processing unit
                     serial_rx_success = self.serial.rx_params(self.f_params_local)
+                    self.debug(f"Received local params from processing unit (len={os.stat(self.f_params_local)[6]})")
                     if serial_rx_success:
                         # tell the server that we are ready and then send our parameters
-                        ack_msg, ack_valid = self.cubesat.radio1.send_with_ack(b'#')
-                        if ack_valid and ack_msg[:1] == b'#':    
+                        ready_msg = bytearray(b'#')
+                        ready_msg.extend(struct.pack('I', os.stat(self.f_params_local)[6]))
+                        ack_msg, ack_valid = self.cubesat.radio1.send_with_ack(ready_msg)
+                        if ack_valid and ack_msg[:1] == b'#':   
                             num_bytes_sent = self._tx_params_radio()
                         
                             # if entire file was received, send the global parameters to processing unit
