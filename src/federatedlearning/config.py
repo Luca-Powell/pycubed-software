@@ -1,7 +1,7 @@
 """Config for code.py"""
 
 # board ID - set to unique value for each board (1, 2, ..., N)
-BOARD_NUM = 5
+BOARD_NUM = 3
 
 # FL config
 SERVER_BOARD_NUM = 3

@@ -12,9 +12,9 @@ Library Repo: https://github.com/pycubed/library_pycubed.py
 """
 import time
 from random import random
-import digitalio
-from micropython import const
-import adafruit_bus_device.spi_device as spidev
+import digitalio # type: ignore
+from micropython import const # type: ignore
+import adafruit_bus_device.spi_device as spidev # type: ignore
 
 # pylint: disable=bad-whitespace
 # Internal constants:
@@ -377,8 +377,12 @@ class RFM9x:
         self._write_u8(0x26,0x00) # no preamble
         self._write_u8(0x27,0x00) # no sync word
         self._write_u8(0x3f,10)   # clear FIFO
-        self._write_u8(0x02,0xFF) # BitRate(15:8)
-        self._write_u8(0x03,0xFF) # BitRate(15:8)
+        
+        self._write_u8(0x02,0x03) # BitRate(15:8)
+        self._write_u8(0x03,0xD1) # BitRate(7:0)
+        # self._write_u8(0x02,0xFF) # BitRate(15:8)
+        # self._write_u8(0x03,0xFF) # BitRate(7:0)
+        
         self._write_u8(0x05,11)   # Freq deviation Lsb 600 Hz
         self.idle()
         # Set payload length VR3X Morse length = 51
@@ -937,7 +941,7 @@ class RFM9x:
             while not timed_out and not self.rx_done():
                 if (time.monotonic() - start) >= timeout:
                     print("Receive timed out.")
-                    timed_out = True    
+                    timed_out = True
         # Payload ready is set, a packet is in the FIFO.
         packet = None
         packet_cpy = None
@@ -988,12 +992,17 @@ class RFM9x:
                         and packet[0] != self.node
                     ):
                         packet = None
+                        packet_cpy = None
+                        
                     # send ACK unless this was an ACK or a broadcast
                     elif (
                         with_ack
                         and ((packet[3] & _RH_FLAGS_ACK) == 0)
+                        and (packet[0] == self.node) # whether the packet is directed towards this device
                         and (packet[0] != _RH_BROADCAST_ADDRESS)
                     ):
+                        if debug: print(f"sending ack after receving packet with header={packet[0]},{packet[1]}, {packet[2]}, {packet[3]}")
+                        
                         # delay before sending Ack to give receiver a chance to get ready
                         if self.ack_delay is not None:
                             time.sleep(self.ack_delay)

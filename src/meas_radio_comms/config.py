@@ -1,7 +1,7 @@
 """Config for code.py"""
 
 # set board number (serves client ID)
-BOARD_NUM = 2
+BOARD_NUM = 1
 
 SERVER_BOARD_NUM = 1
 

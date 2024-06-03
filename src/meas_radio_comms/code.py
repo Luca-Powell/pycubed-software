@@ -11,10 +11,27 @@ from config import *
 serial1 = usb_cdc.data 
 
 # create/locate local and global parameters files on SD card
-f_params_local = cubesat.new_file('params/local.bin')
+# f_params_local = cubesat.new_file('params/local.bin')
+# f_params_global = cubesat.new_file('params/global.bin')
+
+# create mock files of a given size to test transmission
+filesize = 100000
+
+f_params_local = cubesat.new_file('params/testlocal.bin')
 f_params_global = cubesat.new_file('params/global.bin')
 
-verbose = False   
+with open(f_params_local, "wb") as f:
+    for b in range(filesize):
+        f.write(b'x')
+
+with open(f_params_global, "wb") as f:
+    for b in range(filesize):
+        f.write(b'x')
+
+print(f"Local params file size: {os.stat(f_params_local)[6]}")     
+print(f"Global params file size: {os.stat(f_params_global)[6]}")
+
+verbose = False
 max_retries = 5
 
 def update_led(r: int = 0, g: int = 255, b: int = 0, brightness: float = 0.5):
@@ -33,7 +50,6 @@ def get_radiohead_ID(board_num: int):
     board_ids = [0xA0, 0xA3, 0xA6, 0xA9, 0xAC] 
     return board_ids[board_num]
     
-
 def _tx_params_radio():
     """Send global/local parameters over radio packet-by-packet.
     

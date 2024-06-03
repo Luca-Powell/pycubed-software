@@ -377,8 +377,12 @@ class RFM9x:
         self._write_u8(0x26,0x00) # no preamble
         self._write_u8(0x27,0x00) # no sync word
         self._write_u8(0x3f,10)   # clear FIFO
-        self._write_u8(0x02,0xFF) # BitRate(15:8)
-        self._write_u8(0x03,0xFF) # BitRate(15:8)
+        
+        self._write_u8(0x02,0x03) # BitRate(15:8)
+        self._write_u8(0x03,0xD1) # BitRate(7:0)
+        # self._write_u8(0x02,0xFF) # BitRate(15:8)
+        # self._write_u8(0x03,0xFF) # BitRate(7:0)
+        
         self._write_u8(0x05,11)   # Freq deviation Lsb 600 Hz
         self.idle()
         # Set payload length VR3X Morse length = 51
